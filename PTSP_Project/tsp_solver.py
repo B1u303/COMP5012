@@ -42,7 +42,7 @@ def compute_distance_matrix(city_coords):
 distance_matrix = compute_distance_matrix(cities)
 print("Distance Matrix:", distance_matrix)
 
-#generate a random initial tour 
+#generate a random initial tour (for ga)
 import random
 
 def generate_initial_solution(num_cities):
@@ -59,10 +59,11 @@ def calcualte_total_distance(tour, city_coords):
     total_distance = 0
     num_cities = len(tour)
 
-    for i in range(num_cities):
-        city_0 = city_coords[tour[i]]
-        city_1 = city_coords[tour[(i+1) % num_cities]]
-        total_distance += euclidean_distance(city_0, city_1)
+    #add dist between consecutive cities 
+    for i in range(num_cities): 
+        city_0 = city_coords[tour[i]]                           #coords of current
+        city_1 = city_coords[tour[(i+1) % num_cities]]          #coords of next city
+        total_distance += euclidean_distance(city_0, city_1)    #add dist between city_0 and city_1
 
     return total_distance
 
@@ -70,3 +71,13 @@ def calcualte_total_distance(tour, city_coords):
 
 initial_distance = calcualte_total_distance(initial_tour, cities)
 print("Initail tour distance:", initial_distance)
+
+#selection ofr next best generation using tournament selection
+
+def tournament_selection(population, k=3):          #3 tours randomly selected 
+    selected = []
+    for _ in range(len(population)):
+        tournament = random.sample(population, k)   #k random tours
+        tournament.sort(key=lambda tour: calcualte_total_distance(tour, cities)) #sort by distance 
+        selected.append(tournament[0])      #select best 
+    return selected
