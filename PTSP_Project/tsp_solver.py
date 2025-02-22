@@ -1,3 +1,12 @@
+import math
+import random
+
+
+#laod city coordinates 
+file_path = "D:/PTSP_Project/data/vrp8.txt"
+cities = load_data(file_path)
+print("Loaded cities", cities)
+
 def load_data(file_path):
     with open(file_path, "r") as f:
         lines = f.readlines()
@@ -9,13 +18,6 @@ def load_data(file_path):
             city_coords[i] = (float(values[1]), float(values[2]))
 
     return city_coords
-
-#laod city coordinates 
-file_path = "D:/PTSP_Project/data/vrp8.txt"
-cities = load_data(file_path)
-print("Loaded cities", cities)
-
-import math
 
 #finding euclidean dist
 def euclidean_distance(city1, city2):
@@ -38,18 +40,19 @@ def compute_distance_matrix(city_coords):
                 distance_matrix[i][j] = euclidean_distance(city_coords[i], city_coords[j])
 
     return distance_matrix
-        
+
+#debug statements
 distance_matrix = compute_distance_matrix(cities)
 print("Distance Matrix:", distance_matrix)
 
 #generate a random initial tour (for ga)
-import random
 
 def generate_initial_solution(num_cities):
     tour = list(range(num_cities))
     random.shuffle(tour)
     return tour
 
+#debug
 initial_tour = generate_initial_solution(len(cities))
 print("InitiaL Tour:", initial_tour)
 
@@ -81,3 +84,38 @@ def tournament_selection(population, k=3):          #3 tours randomly selected
         tournament.sort(key=lambda tour: calcualte_total_distance(tour, cities)) #sort by distance 
         selected.append(tournament[0])      #select best 
     return selected
+
+#crossover code (ordered crossover)
+
+def order_crossover(parent1, parent2):
+    #choose random positions in the parents
+    start,end = sorted(random.sample(range(len(parent1)), 2))
+
+    #copy from parent to child
+    child = [None] * len(parent1)
+    child[start:end+1] = parent1[start:end+1]
+
+    #fill remaining pos with paretn 2 to maintain order (ox)
+    current_position = 0
+    for city in parent2:
+        if city not in child:
+            while child[current_position] is not None:
+                current_position += 1
+            child[current_position] = city
+
+    return child
+
+#mutaution to ensure diveristy (swap mutation)
+
+def swap_mutation(tour):
+    i,j = random.sample(range(len(tour)),2)
+    tour[i], tour[j] = tour[j], tour[i]
+    return tour
+
+
+
+        
+
+
+
+
