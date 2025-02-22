@@ -1,12 +1,6 @@
 import math
 import random
 
-
-#laod city coordinates 
-file_path = "D:/PTSP_Project/data/vrp8.txt"
-cities = load_data(file_path)
-print("Loaded cities", cities)
-
 def load_data(file_path):
     with open(file_path, "r") as f:
         lines = f.readlines()
@@ -18,6 +12,12 @@ def load_data(file_path):
             city_coords[i] = (float(values[1]), float(values[2]))
 
     return city_coords
+
+
+#load city coordinates 
+file_path = "D:/PTSP_Project/data/vrp8.txt"
+cities = load_data(file_path)
+print("Loaded cities", cities)
 
 #finding euclidean dist
 def euclidean_distance(city1, city2):
@@ -54,7 +54,7 @@ def generate_initial_solution(num_cities):
 
 #debug
 initial_tour = generate_initial_solution(len(cities))
-print("InitiaL Tour:", initial_tour)
+print("Initial Tour:", initial_tour)
 
 #calculate total distance of the tour 
 
@@ -72,16 +72,16 @@ def calcualte_total_distance(tour, city_coords):
 
 #eg test
 
-initial_distance = calcualte_total_distance(initial_tour, cities)
-print("Initail tour distance:", initial_distance)
+#initial_distance = calcualte_total_distance(initial_tour, cities)
+#print("Initial Tour Distance:", initial_distance)
 
 #selection ofr next best generation using tournament selection
 
-def tournament_selection(population, k=3):          #3 tours randomly selected 
+def tournament_selection(population,city_coords, k=3):          #3 tours randomly selected 
     selected = []
     for _ in range(len(population)):
         tournament = random.sample(population, k)   #k random tours
-        tournament.sort(key=lambda tour: calcualte_total_distance(tour, cities)) #sort by distance 
+        tournament.sort(key=lambda tour: calcualte_total_distance(tour, city_coords)) #sort by distance 
         selected.append(tournament[0])      #select best 
     return selected
 
@@ -111,6 +111,55 @@ def swap_mutation(tour):
     i,j = random.sample(range(len(tour)),2)
     tour[i], tour[j] = tour[j], tour[i]
     return tour
+
+#ga loop
+
+def genetic_algorithm(file_path, population_size=10, generations=100, mutation_rate=0.2):
+    cities = load_data(file_path)
+    distance_matrix = compute_distance_matrix(cities)
+
+    #init population
+    population = [generate_initial_solution(len(cities)) for _ in range(population_size)]
+
+    for gen in range(generations):
+        print(f"generation {gen+1}")
+
+        #best dist
+        population.sort(key=lambda tour: calcualte_total_distance(tour, cities)) #sort by distance 
+        best_distance = calcualte_total_distance(population[0], cities)     #select best 
+        print(f"Best distance: {best_distance}")
+
+        #select parents
+        selected_parents = tournament_selection(population, cities)
+
+        #ox/mutation
+        new_population = []
+        for i in range(0, len(selected_parents), 2):
+            if i+1 < len(selected_parents):
+                child1 = order_crossover(selected_parents[i], selected_parents[i+1])
+                child2 = order_crossover(selected_parents[i+1, selected_parents[i]])
+
+                #mutation based on probability
+                if random.random() < mutation_rate:
+                    child1 = swap_mutation(child1)
+                if random.random() > mutation_rate:
+                    child2 = swap_mutation(child2)
+
+                new_population.extend([child1, child2])
+
+        population = new_population
+
+
+    best_tour = population[0]
+    best_distance = calcualte_total_distance(best_tour, cities)
+    print("\nfinal best tour:", best_tour)
+    print("final best distance:", best_distance)
+
+    return best_tour, best_distance
+
+best_tour, best_distance = genetic_algorithm(file_path, population_size=20, generations=500, mutation_rate=0.1)
+
+
 
 
 
