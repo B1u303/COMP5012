@@ -1,5 +1,6 @@
 import math
 import random
+import matplotlib.pyplot as plt
 
 def load_data(file_path):
     with open(file_path, "r") as f:
@@ -42,8 +43,8 @@ def compute_distance_matrix(city_coords):
     return distance_matrix
 
 #debug statements
-distance_matrix = compute_distance_matrix(cities)
-print("Distance Matrix:", distance_matrix)
+#distance_matrix = compute_distance_matrix(cities)
+#print("Distance Matrix:", distance_matrix)
 
 #generate a random initial tour (for ga)
 
@@ -53,12 +54,12 @@ def generate_initial_solution(num_cities):
     return tour
 
 #debug
-initial_tour = generate_initial_solution(len(cities))
-print("Initial Tour:", initial_tour)
+#initial_tour = generate_initial_solution(len(cities))
+#print("Initial Tour:", initial_tour)
 
 #calculate total distance of the tour 
 
-def calcualte_total_distance(tour, city_coords):
+def calculate_total_distance(tour, city_coords):
     total_distance = 0
     num_cities = len(tour)
 
@@ -81,7 +82,7 @@ def tournament_selection(population,city_coords, k=3):          #3 tours randoml
     selected = []
     for _ in range(len(population)):
         tournament = random.sample(population, k)   #k random tours
-        tournament.sort(key=lambda tour: calcualte_total_distance(tour, city_coords)) #sort by distance 
+        tournament.sort(key=lambda tour: calculate_total_distance(tour, city_coords)) #sort by distance 
         selected.append(tournament[0])      #select best 
     return selected
 
@@ -114,6 +115,35 @@ def swap_mutation(tour):
 
 #ga loop
 
+#plots
+def plot_tour(tour, cities):
+    #x = [city_coords[city][0] for city in tour]
+    #y = [city_coords[city][0] for city in tour]
+
+    x = [cities[i][0] for i in tour] + [cities[tour[0]][0]]
+    y = [cities[i][1] for i in tour] + [cities[tour[0]][1]]
+
+    #x.append(x[0])
+    #y.append(y[0])
+
+    plt.figure(figsize=(8,6))
+    plt.plot(x,y,marker="o", linestyle="-", color="b", label="Path")
+
+    #for i, city in enumerate(tour):
+        #plt.text(city_coords[city][0], city_coords[city][1], str(city), fontsize=9, color= "red" )
+    
+    for i, (x_c, y_c) in enumerate(cities.values()):
+        plt.text(x_c, y_c, str(i), fontsize=10, color="red")
+
+    plt.xlabel("X Coordinate")
+    plt.ylabel("Y Coordinate")
+    plt.title("Best tour found")
+    plt.legend()
+    plt.grid(True)
+    plt.show()
+
+
+
 def genetic_algorithm(file_path, population_size=10, generations=100, mutation_rate=0.2):
     cities = load_data(file_path)
     distance_matrix = compute_distance_matrix(cities)
@@ -125,8 +155,8 @@ def genetic_algorithm(file_path, population_size=10, generations=100, mutation_r
         print(f"generation {gen+1}")
 
         #best dist
-        population.sort(key=lambda tour: calcualte_total_distance(tour, cities)) #sort by distance 
-        best_distance = calcualte_total_distance(population[0], cities)     #select best 
+        population.sort(key=lambda tour: calculate_total_distance(tour, cities)) #sort by distance 
+        best_distance = calculate_total_distance(population[0], cities)     #select best 
         print(f"Best distance: {best_distance}")
 
         #select parents
@@ -134,10 +164,10 @@ def genetic_algorithm(file_path, population_size=10, generations=100, mutation_r
 
         #ox/mutation
         new_population = []
-        for i in range(0, len(selected_parents), 2):
-            if i+1 < len(selected_parents):
-                child1 = order_crossover(selected_parents[i], selected_parents[i+1])
-                child2 = order_crossover(selected_parents[i+1, selected_parents[i]])
+        while len(new_population) < population_size:
+                p1,p2 = random.sample(selected_parents,2)
+                child1 = order_crossover(p1, p2)
+                child2 = order_crossover(p2, p1)
 
                 #mutation based on probability
                 if random.random() < mutation_rate:
@@ -151,9 +181,11 @@ def genetic_algorithm(file_path, population_size=10, generations=100, mutation_r
 
 
     best_tour = population[0]
-    best_distance = calcualte_total_distance(best_tour, cities)
+    best_distance = calculate_total_distance(best_tour, cities)
     print("\nfinal best tour:", best_tour)
     print("final best distance:", best_distance)
+
+    plot_tour(best_tour, cities)
 
     return best_tour, best_distance
 
