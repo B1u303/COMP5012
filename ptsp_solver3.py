@@ -1,15 +1,21 @@
-import math
+import numpy as np
 import random
 import matplotlib.pyplot as plt
-import numpy as np 
-from scipy.spatial import ConvexHull 
+from scipy.spatial import ConvexHull
 
-##load city data
+# GA parameters
+POP_SIZE = 80
+NUM_GENERATIONS = 100
+TOURNAMENT_SIZE = 3
+CROSSOVER_RATE = 0.9
+MUTATION_RATE = 0.1
+
+#load cities from text file
 def load_data(file_path):
+    city_coords = {}
     with open(file_path, "r") as f:
         lines = f.readlines() 
 
-    city_coords = {}
     for i, line in enumerate(lines):
         values = line.split()
         if len(values) >= 4:
@@ -18,11 +24,11 @@ def load_data(file_path):
     
     return city_coords
 
-#euclidean distance
+#calculate euclidean distance
 def euclidean_distance(city1, city2):
     x1, y1 = city1[:2]  
     x2, y2 = city2[:2]
-    return math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2)
+    return np.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2)
 
 #total tour distance considering the frequency of visits
 def calculate_total_distance(tour, city_coords):
@@ -31,116 +37,52 @@ def calculate_total_distance(tour, city_coords):
     for i in range(num_cities): 
         city_0 = city_coords[tour[i]] 
         city_1 = city_coords[tour[(i+1) % num_cities]] 
-        #multiply the edge distance by the frequency of the originating city
-        total_distance += euclidean_distance(city_0, city_1) * city_0[2]
+        #removed frequency weighting 
+        total_distance += euclidean_distance(city_0, city_1)
     
     return total_distance
 
-#longest segment (weighted by frequency).
-def calculate_max_segment_distance(tour, city_coords):
-    segment_distances = []
-    num_cities = len(tour)
-    for i in range(num_cities):
-        city_0 = city_coords[tour[i]]
-        city_1 = city_coords[tour[(i+1) % num_cities]]
-        segment_distances.append(euclidean_distance(city_0, city_1) * city_0[2])
-    return max(segment_distances)  
+#calculate workload balance across segments
+def calculate_workload_balance(tour, city_coords, num_periods=3):
+    segment_length = len(tour) // num_periods
+    workloads = []
+
+    for i in range(num_periods):
+        start = i * segment_length
+        end = (i + 1) * segment_length if i < num_periods - 1 else len(tour)
+        segment = tour[start:end]
+
+        workload = 0
+        for j in range(len(segment) - 1):
+            city_0 = city_coords[segment[j]]
+            city_1 = city_coords[segment[j+1]]
+            workload += euclidean_distance(city_0, city_1)
+        workloads.append(workload)
+
+    return np.std(workloads)
 
 #random initial tour
-def generate_initial_solution(num_cities):
-    tour = list(range(num_cities))
-    random.shuffle(tour)
-    return tour
+def initialize_population(pop_size, num_cities):
+    return [random.sample(range(num_cities), num_cities) for _ in range(pop_size)]
 
-#non-dominated sorting on the population based on objectives
-def non_dominated_sort(population, objectives):
-    fronts = []
-    dominated = [set() for _ in range(len(population))]  
-    domination_count = [0] * len(population)  
-    first_front = [] 
-    
-    for i in range(len(population)):
-        for j in range(len(population)):
-            if i == j:
-                continue                
-            # check if solution i dominates solution j
-            if (objectives[i][0] <= objectives[j][0] and objectives[i][1] <= objectives[j][1] and 
-                (objectives[i][0] < objectives[j][0] or objectives[i][1] < objectives[j][1])):
-                dominated[i].add(j) 
-            elif (objectives[j][0] <= objectives[i][0] and objectives[j][1] <= objectives[i][1] and 
-                  (objectives[j][0] < objectives[i][0] or objectives[j][1] < objectives[i][1])):
-                domination_count[i] += 1              
-        if domination_count[i] == 0:
-            first_front.append(i)
-    fronts.append(first_front)
-    
-    # find remaining fronts
-    current_front = first_front
-    while current_front: 
-        next_front = []
-        for i in current_front:
-            for j in dominated[i]:
-                domination_count[j] -= 1
-                if domination_count[j] == 0:
-                    next_front.append(j)
-                    
-        #add found solutions for next front
-        if next_front:
-            fronts.append(next_front)
-        #move to next front
-        current_front = next_front
-    return fronts
-
-#assign crowding distance to each individual in the population
-def crowding_distance_assignment(population, fronts, objectives):
-    crowding_distances = [0] * len(population)
-    for front in fronts:
-        if len(front) <= 2:
-            for idx in front:
-                crowding_distances[idx] = float('inf')
-            continue 
-        
-        for obj_idx in range(2):  
-            sorted_indices = sorted(front, key=lambda x: objectives[x][obj_idx])
-            crowding_distances[sorted_indices[0]] = float('inf')
-            crowding_distances[sorted_indices[-1]] = float('inf')
-            obj_min = objectives[sorted_indices[0]][obj_idx]
-            obj_max = objectives[sorted_indices[-1]][obj_idx]
-            if obj_max == obj_min:
-                continue
-            for i in range(1, len(sorted_indices) - 1):
-                crowding_distances[sorted_indices[i]] += (
-                    (objectives[sorted_indices[i+1]][obj_idx] - objectives[sorted_indices[i-1]][obj_idx]) /
-                    (obj_max - obj_min)
-                )
-    return crowding_distances
-
-#tounrament selection based on front ranking and crowding distance
-def tournament_selection(population, crowding_distances, fronts):
-    selected = []
-    for _ in range(len(population)):
-        i, j = random.sample(range(len(population)), 2)
-        front_rank_i = next(r for r, front in enumerate(fronts) if i in front)
-        front_rank_j = next(r for r, front in enumerate(fronts) if j in front)
-        if front_rank_i < front_rank_j:
-            selected.append(population[i])
-        elif front_rank_i > front_rank_j:
-            selected.append(population[j])
-        else:
-            selected.append(population[i] if crowding_distances[i] > crowding_distances[j] else population[j])
-    return selected
+#tournament selection based on front ranking and crowding distance
+def tournament_selection(population, objectives, k):
+    selected = random.sample(list(zip(population, objectives)), k)
+    selected.sort(key=lambda x: (x[1][0], x[1][1]))
+    return selected[0][0]
 
 #order crossover
-def order_crossover(parent1, parent2):
+def ordered_crossover(parent1, parent2):
     start, end = sorted(random.sample(range(len(parent1)), 2))
     child = [None] * len(parent1)
-    child[start:end+1] = parent1[start:end+1]
-    current_position = 0
+    child[start:end] = parent1[start:end]
+    pointer = 0
     for city in parent2:
         if city not in child:
-            while current_position < len(child) and child[current_position] is not None:
-                current_position += 1
-            child[current_position] = city
+            while pointer < len(child) and child[pointer] is not None:
+                pointer += 1
+            if pointer < len(child):
+                child[pointer] = city
     return child
 
 #swap mutation
@@ -149,109 +91,204 @@ def swap_mutation(tour):
     tour[i], tour[j] = tour[j], tour[i]
     return tour
 
-##plot pareto front
+#fast Non-Dominated Sorting (NSGA-II)
+def fast_non_dominated_sort(objectives):
+    S = [[] for _ in range(len(objectives))]
+    front = [[]]
+    n = [0] * len(objectives)
+    rank = [0] * len(objectives)
+
+    for p in range(len(objectives)):
+        for q in range(len(objectives)):
+            if (objectives[p][0] < objectives[q][0] and objectives[p][1] < objectives[q][1]) or \
+               (objectives[p][0] <= objectives[q][0] and objectives[p][1] < objectives[q][1]) or \
+               (objectives[p][0] < objectives[q][0] and objectives[p][1] <= objectives[q][1]):
+                S[p].append(q)
+            elif (objectives[q][0] < objectives[p][0] and objectives[q][1] < objectives[p][1]) or \
+                 (objectives[q][0] <= objectives[p][0] and objectives[q][1] < objectives[p][1]) or \
+                 (objectives[q][0] < objectives[p][0] and objectives[q][1] <= objectives[p][1]):
+                n[p] += 1
+
+        if n[p] == 0:
+            rank[p] = 0
+            front[0].append(p)
+
+    i = 0
+    while front[i]:
+        Q = []
+        for p in front[i]:
+            for q in S[p]:
+                n[q] -= 1
+                if n[q] == 0:
+                    rank[q] = i + 1
+                    Q.append(q)
+        i += 1
+        front.append(Q)
+
+    return front[:-1]
+
+#check if solution dominates another
+def dominates(obj1, obj2):
+    return (obj1[0] <= obj2[0] and obj1[1] < obj2[1]) or \
+           (obj1[0] < obj2[0] and obj1[1] <= obj2[1])
+
+#crowding distance assignment (NSGA-II)
+def calculate_crowding_distance(objectives):
+    n = len(objectives)
+    if n <= 2:
+        return [float('inf')] * n
+    
+    crowding_distance = [0.0] * n
+    
+    for m in range(2):  #two objectives
+        sorted_indices = np.argsort([obj[m] for obj in objectives])
+
+        crowding_distance[sorted_indices[0]] = float('inf')
+        crowding_distance[sorted_indices[-1]] = float('inf')
+
+        obj_min = objectives[sorted_indices[0]][m]
+        obj_max = objectives[sorted_indices[-1]][m]
+
+        if obj_max > obj_min:  
+            for i in range(1, n-1):
+                idx = sorted_indices[i]
+                prev_idx = sorted_indices[i-1]
+                next_idx = sorted_indices[i+1]
+                
+                crowding_distance[idx] += (objectives[next_idx][m] - objectives[prev_idx][m]) / (obj_max - obj_min)
+    
+    return crowding_distance
+
+#pareto archive (non-dominated solutions)
+def update_archive(archive_solutions, archive_objectives, new_solution, new_objective, max_archive_size=100):
+    #check if new solution is dominated by any archive solution
+    for archive_obj in archive_objectives:
+        if dominates(archive_obj, new_objective):
+            return archive_solutions, archive_objectives  
+
+    #remove solutions from archive that are dominated by new solution
+    non_dominated_indices = []
+    for i, archive_obj in enumerate(archive_objectives):
+        if not dominates(new_objective, archive_obj):
+            non_dominated_indices.append(i)
+    
+    updated_archive_solutions = [archive_solutions[i] for i in non_dominated_indices]
+    updated_archive_objectives = [archive_objectives[i] for i in non_dominated_indices]
+
+    updated_archive_solutions.append(new_solution)
+    updated_archive_objectives.append(new_objective)
+    
+    #if archive exceeds max size, use crowding distance to trim
+    if len(updated_archive_solutions) > max_archive_size:
+        crowding_distances = calculate_crowding_distance(updated_archive_objectives)
+        sorted_indices = np.argsort(crowding_distances)[::-1]
+        updated_archive_solutions = [updated_archive_solutions[i] for i in sorted_indices[:max_archive_size]]
+        updated_archive_objectives = [updated_archive_objectives[i] for i in sorted_indices[:max_archive_size]]
+    
+    return updated_archive_solutions, updated_archive_objectives
+
+#plot pareto front
 def plot_pareto_front(objectives):
-    plt.figure(figsize=(12, 7)) 
-    plt.scatter([obj[0] for obj in objectives], [obj[1] for obj in objectives], 
-                alpha=0.7, c='blue', label='Solutions')
-    #convex hull for better readability 
+    plt.figure(figsize=(10, 6))
+    distances, balances = zip(*objectives)
+    plt.scatter(distances, balances, c='blue', alpha=0.7, label='Pareto Front')
+    
+    #convex hull for better readability
     points = np.array([(obj[0], obj[1]) for obj in objectives])
     if len(points) > 2:  
         hull = ConvexHull(points)
         for simplex in hull.simplices:
             plt.plot(points[simplex, 0], points[simplex, 1], 'r-', linewidth=2)
-    plt.xlabel('Total Tour Distance (weighted by frequency)')
-    plt.ylabel('Longest Segment Distance (weighted by frequency)')
-    plt.title('Enhanced Pareto Front Visualization for PTSP')
+            
+    plt.xlabel('Total Tour Distance')
+    plt.ylabel('Workload Balance (Std Dev)')
+    plt.title('Pareto Front for PTSP')
     plt.legend()
     plt.grid(True, linestyle='--', alpha=0.7)
-    plt.tight_layout()
     plt.show()
 
 #plot tour (2d)
-def plot_tour(tour, cities, title):
-    x = [cities[i][0] for i in tour] + [cities[tour[0]][0]]  
-    y = [cities[i][1] for i in tour] + [cities[tour[0]][1]]
+def plot_tour(tour, city_coords, title):
+    x = [city_coords[city][0] for city in tour + [tour[0]]]
+    y = [city_coords[city][1] for city in tour + [tour[0]]]
     plt.figure(figsize=(8, 6))
-    plt.plot(x, y, marker="o", linestyle="-", color="b", label="Path")
-    for i, (x_c, y_c, freq) in enumerate(cities.values()):
-        plt.text(x_c, y_c, f"{i}\n({freq})", fontsize=10, color="red")
+    plt.plot(x, y, marker="o", linestyle="-", color="b")
+    for i, city in enumerate(tour):
+        x_c, y_c, freq = city_coords[city]
+        plt.text(x_c, y_c, f"{city}\n({freq})", fontsize=10, color="red")
     plt.xlabel("X Coordinate")
     plt.ylabel("Y Coordinate")
     plt.title(title)
-    plt.legend()
     plt.grid(True)
     plt.show()
 
-def moga_ptsp(file_path, population_size=50, generations=200, mutation_rate=0.1):
+def moga_ptsp(file_path, population_size=POP_SIZE, generations=NUM_GENERATIONS, mutation_rate=MUTATION_RATE):
     #load cities
-    cities = load_data(file_path)
-    num_cities = len(cities)
+    city_coords = load_data(file_path)
+    num_cities = len(city_coords)
     
     #initialize population
-    population = []
-    for _ in range(population_size):
-        new_solution = generate_initial_solution(num_cities)
-        population.append(new_solution)
+    population = initialize_population(population_size, num_cities)
+    archive_solutions = []
+    archive_objectives = []
 
-    pareto_solutions = [] 
-    pareto_objectives = [] 
-    
     for gen in range(generations):
         print(f"Generation {gen + 1}")
   
         objectives = []
         for tour in population:
-            obj1 = calculate_total_distance(tour, cities)
-            obj2 = calculate_max_segment_distance(tour, cities)
+            obj1 = calculate_total_distance(tour, city_coords)
+            obj2 = calculate_workload_balance(tour, city_coords)
             objectives.append((obj1, obj2))  
 
         #non-dominated sorting
-        fronts = non_dominated_sort(population, objectives)
+        fronts = fast_non_dominated_sort(objectives)
         
-        #crowding distances
-        crowding_distances = crowding_distance_assignment(population, fronts, objectives)
+        #update archive with solutions from the first front
+        for idx in fronts[0]:
+            archive_solutions, archive_objectives = update_archive(
+                archive_solutions, 
+                archive_objectives, 
+                population[idx], 
+                objectives[idx]
+            )
         
-        #save the first front solutions
-        first_front = fronts[0]
-        for i in first_front:
-            pareto_solutions.append(population[i])
-            pareto_objectives.append(objectives[i])
-        
-        #tournament selection
-        selected_parents = tournament_selection(population, crowding_distances, fronts)
-        
-        #generate new population using order crossover and mutation
+        #tournament selection and create new population
         new_population = []
         while len(new_population) < population_size:
-            p1, p2 = random.sample(selected_parents, 2)
-            child1 = order_crossover(p1, p2)
-            child2 = order_crossover(p2, p1)
-            if random.random() < mutation_rate:  
-                child1 = swap_mutation(child1)
+            parent1 = tournament_selection(population, objectives, TOURNAMENT_SIZE)
+            parent2 = tournament_selection(population, objectives, TOURNAMENT_SIZE)
+            
+            if random.random() < CROSSOVER_RATE:
+                child = ordered_crossover(parent1, parent2)
+            else:
+                child = parent1[:]
+                
             if random.random() < mutation_rate:
-                child2 = swap_mutation(child2)
-            new_population.extend([child1, child2])
-        population = new_population[:population_size]
+                child = swap_mutation(child)
+                
+            new_population.append(child)
+            
+        population = new_population
+        print(f"Generation {gen + 1} complete, Archive size: {len(archive_solutions)}")
     
-    # plot pareto front for all pareto solutions
-    plot_pareto_front(pareto_objectives)
+    # plot pareto front from archive
+    plot_pareto_front(archive_objectives)
     
     unique_objectives = []
     unique_indices = []
-    for idx, obj in enumerate(pareto_objectives):
+    for idx, obj in enumerate(archive_objectives):
         if obj not in unique_objectives:
             unique_objectives.append(obj)
             unique_indices.append(idx)
  
     for i, idx in enumerate(unique_indices[:3]):  
-        dist, max_seg = pareto_objectives[idx]
-        best_tour = pareto_solutions[idx]
-        plot_tour(best_tour, cities, f'Tour - Total Dist: {dist:.2f}, Max Segment: {max_seg:.2f}')
+        dist, balance = archive_objectives[idx]
+        best_tour = archive_solutions[idx]
+        plot_tour(best_tour, city_coords, f'Tour - Total Dist: {dist:.2f}, Workload Balance: {balance:.2f}')
     
-    return pareto_solutions, pareto_objectives
+    return archive_solutions, archive_objectives
 
 if __name__ == "__main__":
     file_path = "D:/PTSP_Project/data/vrp8.txt"  
-
-    best_solutions, best_objectives = moga_ptsp(file_path, population_size=50, generations=200, mutation_rate=0.1)
+    archive_solutions, archive_objectives = moga_ptsp(file_path, population_size=POP_SIZE, generations=NUM_GENERATIONS, mutation_rate=MUTATION_RATE)
